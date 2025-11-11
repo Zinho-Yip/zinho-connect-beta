@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+
+# Cache and logs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.tox/
+*.log
+DNS_cache.json
+PAC_cache.pac
+
+# Build and distribution artifacts
+build/
+dist/
+*.spec
+.venv
+*.egg-info
+
+# IDE and local config
+.idea/
+.vscode/
+*.bak
+
+# Documentation and local scripts
+docs/
+tools/
+fastlane/
+github_release/
+.github/
+README.md
