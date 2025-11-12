@@ -351,8 +351,18 @@ def start_server(block=True):
     generate_pac()
 
     global serverHandle
-    # Read port from environment variable 'PORT', fallback to config file
-    port = int(os.environ.get('PORT', config['port']))
+    
+    # Zeabur might use 'WEB_PORT' or a placeholder in 'PORT'.
+    # This logic robustly finds the correct port.
+    port_str = os.environ.get('PORT')
+    if not port_str or not port_str.isdigit():
+        port_str = os.environ.get('WEB_PORT')
+
+    try:
+        port = int(port_str)
+    except (ValueError, TypeError):
+        port = int(config['port'])
+
     logger.info(f"Now listening at: 0.0.0.0:{port}")
     serverHandle = ThreadedServer("", port).listen(block)
 
