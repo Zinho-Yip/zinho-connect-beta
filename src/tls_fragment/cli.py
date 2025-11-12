@@ -1,6 +1,7 @@
 from .log import logger
 from pathlib import Path
 import socket
+import os
 import threading
 import time
 from . import remote, fake_desync, fragment, utils
@@ -350,8 +351,10 @@ def start_server(block=True):
     generate_pac()
 
     global serverHandle
-    logger.info(f"Now listening at: 127.0.0.1:{config['port']}")
-    serverHandle = ThreadedServer("", config["port"]).listen(block)
+    # Read port from environment variable 'PORT', fallback to config file
+    port = int(os.environ.get('PORT', config['port']))
+    logger.info(f"Now listening at: 0.0.0.0:{port}")
+    serverHandle = ThreadedServer("", port).listen(block)
 
 
 def stop_server(wait_for_stop=True):
