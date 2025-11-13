@@ -214,6 +214,7 @@ class ThreadedServer(object):
             return None, None  
 
     def my_upstream(self, client_sock):
+        global ThreadtoWork
         backend_sock, data = self.handle_client_request(client_sock)
         if backend_sock is None:
             client_sock.close()
@@ -235,7 +236,6 @@ class ThreadedServer(object):
                     backend_sock.send(data)
                 
                 # 继续作为管道，转发客户端可能发送的后续数据（例如POST请求的body）
-                global ThreadtoWork
                 while ThreadtoWork:
                     more_data = client_sock.recv(16384)
                     if more_data:
@@ -252,7 +252,6 @@ class ThreadedServer(object):
 
         # 原有的TLS/SOCKS5处理逻辑
         first_flag = True
-        global ThreadtoWork
         while ThreadtoWork:
             try:
                 if first_flag is True:
