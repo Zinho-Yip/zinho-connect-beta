@@ -36,6 +36,13 @@ def handle_client(client_socket):
         
         method, url, version = first_line.split(b' ', 2)
 
+        # --- 优雅地处理来自负载均衡的健康检查 ---
+        if method == b'GET' and url == b'/':
+            log("Root path GET request received (likely a health check). Responding with 200 OK.")
+            client_socket.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nProxy service is running.')
+            return
+        # --- 健康检查处理结束 ---
+
         if method == b'CONNECT':
             # 处理 HTTPS 的 CONNECT 请求
             host, port = parse_connect_request(url)
