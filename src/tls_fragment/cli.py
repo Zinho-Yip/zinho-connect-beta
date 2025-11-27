@@ -93,7 +93,7 @@ class ThreadedServer(object):
             return None
 
     def _handle_socks5(self, client_socket):
-        """处理SOCKS5协议连接，保持与原有返回格式一致"""
+#"'''处理SOCKS5协议连接，保持与原有返回格式一致'''
         try:
             # 认证协商阶段
             client_socket.recv(2)  # 已经通过peek确认版本
@@ -145,11 +145,11 @@ class ThreadedServer(object):
             return None
 
     def _handle_http_protocol(self, client_socket):
-        """增强后的 HTTP 处理：
+        "'''增强后的 HTTP 处理：
            - 支持 CONNECT（原有）
            - 支持 proxy-forward（返回 (remote_obj, initial_request_bytes)）
            - 支持 PAC / 原有重定向 / 错误处理
-        """
+        '''
         data = client_socket.recv(16384)
         if not data:
             client_socket.close()
@@ -363,7 +363,7 @@ class ThreadedServer(object):
                                 path = parsed.path or "/"
                                 if parsed.query:
                                     path += "?" + parsed.query
-                                new_request_line = f"{method} {path} {http_ver}".encode()
+                                new_request_line = f'{method} {path} {http_ver}'.encode()
                             else:
                                 # 相对路径直接保持
                                 new_request_line = lines[0]
@@ -541,8 +541,8 @@ def start_server(block=True):
     generate_pac()
 
     global serverHandle
-    logger.info(f"Now listening at: 127.0.0.1:{config['port']}")
-    serverHandle = ThreadedServer("", config["port"]).listen(block)
+    logger.info(f"Now listening at: 0.0.0.0:{config['port']}")
+    serverHandle = ThreadedServer("0.0.0.0", config['port']).listen(block)
 
 def stop_server(wait_for_stop=True):
     global ThreadtoWork, proxy_thread

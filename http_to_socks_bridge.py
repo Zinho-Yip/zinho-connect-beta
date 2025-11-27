@@ -1,143 +1,98 @@
-
 import socket
 import threading
 import select
-import struct
 
-# --- 配置 ---
-# 桥接服务监听的地址和端口
-BRIDGE_HOST = '0.0.0.0'
-BRIDGE_PORT = 5000
-
-# 内部SOCKS5代理的地址和端口 (tlsp 服务)
-SOCKS5_HOST = '127.0.0.1'
-SOCKS5_PORT = 2500
-
-# --- 实现 ---
 
 def handle_client(client_socket):
-    """处理每个客户端的连接请求"""
     try:
+        # Read the HTTP request from the client
         request_data = client_socket.recv(4096)
         if not request_data:
             return
 
-        # 1. 解析 HTTP CONNECT 请求
-        try:
-            first_line = request_data.split(b'\r\n')[0].decode('utf-8')
-            method, target, _ = first_line.split(' ')
-            if method.upper() != 'CONNECT':
-                client_socket.sendall(b'HTTP/1.1 405 Method Not Allowed\r\n\r\n')
-                return
-            target_host, target_port = target.split(':')
-            target_port = int(target_port)
-        except Exception as e:
-            print(f"[-] 解析HTTP CONNECT请求失败: {e}")
+        # Extract the host and port from the CONNECT request
+        first_line = request_data.split(b'\n')[0]
+        method, url, _ = first_line.split(b' ')
+
+        if method != b'CONNECT':
+            # For simplicity, this bridge only handles HTTPS CONNECT requests
             client_socket.sendall(b'HTTP/1.1 400 Bad Request\r\n\r\n')
             return
-        
-        print(f"[+] 收到 CONNECT 请求，目标: {target_host}:{target_port}")
 
-        # 2. 作为SOCKS5客户端连接到内部的tlsp服务
+        host, port_str = url.split(b':')
+        port = int(port_str)
+
+        # Create a SOCKS5 proxy request
+        # For simplicity, assuming no authentication is required for the SOCKS5 server
         socks_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            socks_socket.connect((SOCKS5_HOST, SOCKS5_PORT))
+        # The SOCKS5 server is the tlsp service running on localhost (inside the container)
+        socks_socket.connect(('127.0.0.1', 2500))
 
-            # SOCKS5 握手
-            # a. 发送客户端支持的认证方法 (0x00 = No Auth)
-            socks_socket.sendall(b'\x05\x01\x00')
-            auth_method_resp = socks_socket.recv(2)
-            if auth_method_resp != b'\x05\x00':
-                raise Exception(f"SOCKS5服务器需要认证，但我不会: {auth_method_resp.hex()}")
+        # Send the SOCKS5 connection request
+        # Version 5, 1 authentication method, No authentication required
+        socks_socket.sendall(b'\x05\x01\x00')
+        auth_response = socks_socket.recv(2)
+        if auth_response != b'\x05\x00':
+            raise Exception('SOCKS5 authentication failed')
 
-            # b. 发送连接请求
-            # VER=5, CMD=1(CONNECT), RSV=0, ATYP=3(Domain), HOST_LEN, HOST, PORT
-            host_bytes = target_host.encode('utf-8')
-            port_bytes = struct.pack('!H', target_port)
-            req = b'\x05\x01\x00\x03' + bytes([len(host_bytes)]) + host_bytes + port_bytes
-            socks_socket.sendall(req)
+        # Send the SOCKS5 connection request to the final destination
+        # Version 5, CONNECT command, Reserved, Address type (domain), host length, host, port
+        socks_request = b'\x05\x01\x00\x03' + len(host).to_bytes(1, 'big') + host + port.to_bytes(2, 'big')
+        socks_socket.sendall(socks_request)
 
-            # c. 接收SOCKS5服务器的响应
-            resp = socks_socket.recv(4)
-            if resp[0] != 0x05 or resp[1] != 0x00:
-                raise Exception(f"SOCKS5连接失败，响应: {resp.hex()}")
-            
-            # 读取剩余的响应以清空缓冲区
-            # BND.ADDR和BND.PORT依赖于ATYP，这里简化处理，直接读取直到结束
-            # 通常响应长度是 1 + 1 + 1 + 1 + len(addr) + 2，但我们不关心具体地址
-            # 简单假设是IPv4，读取 1 + 4 + 2 = 7 字节
-            addr_type = socks_socket.recv(1)[0]
-            if addr_type == 1: # IPv4
-                socks_socket.recv(4 + 2)
-            elif addr_type == 3: # Domain
-                domain_len = socks_socket.recv(1)[0]
-                socks_socket.recv(domain_len + 2)
-            elif addr_type == 4: # IPv6
-                socks_socket.recv(16 + 2)
-            else:
-                 raise Exception(f"未知的地址类型 {addr_type}")
+        # Receive the SOCKS5 response
+        socks_response = socks_socket.recv(4096)
+        if not (socks_response and socks_response[1] == 0):
+            raise Exception(f'SOCKS5 connection failed, response: {socks_response}')
 
-        except Exception as e:
-            print(f"[-] 连接到内部SOCKS5代理失败: {e}")
-            client_socket.sendall(b'HTTP/1.1 502 Bad Gateway\r\n\r\n')
-            socks_socket.close()
-            return
-        
-        print(f"[+] SOCKS5 连接成功建立: {target_host}:{target_port}")
+        # Send a successful HTTP response to the client
+        client_socket.sendall(b'HTTP/1.1 200 OK\r\n\r\n')
 
-        # 3. 通知客户端连接已建立
-        client_socket.sendall(b'HTTP/1.1 200 Connection established\r\n\r\n')
+        # Bridge the connections
+        bridge_connection(client_socket, socks_socket)
 
-        # 4. 双向转发数据
-        transfer_data(client_socket, socks_socket)
-
+    except Exception as e:
+        print(f"Error handling client: {e}")
     finally:
         client_socket.close()
 
-
-def transfer_data(sock1, sock2):
-    """在两个socket之间双向转发数据"""
+def bridge_connection(sock1, sock2):
     sockets = [sock1, sock2]
     try:
         while True:
-            readable, _, exceptional = select.select(sockets, [], sockets, 600)
+            readable, _, exceptional = select.select(sockets, [], sockets, 60)
+
             if exceptional:
                 break
-            if not readable: # Timeout
-                break
-                
-            for s in readable:
-                data = s.recv(8192)
-                if not data:
-                    # socket关闭
-                    return
-                if s is sock1:
-                    sock2.sendall(data)
-                else:
-                    sock1.sendall(data)
-    except Exception as e:
-        print(f"[!] 转发数据时发生错误: {e}")
-    finally:
-        sock1.close()
-        sock2.close()
 
+            if not readable:
+                continue
+
+            for sock in readable:
+                other_sock = sock2 if sock is sock1 else sock1
+                data = sock.recv(4096)
+                if not data:
+                    # Connection closed
+                    return
+                other_sock.sendall(data)
+    except Exception as e:
+        print(f"Bridge error: {e}")
+    finally:
+        for s in sockets:
+            s.close()
 
 def main():
-    """主函数，启动服务"""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((BRIDGE_HOST, BRIDGE_PORT))
+    # Bind to 0.0.0.0 to accept connections from outside the container
+    server_socket.bind(('0.0.0.0', 5000))
     server_socket.listen(10)
-    print(f"[*] HTTP-to-SOCKS5 桥接服务已启动，监听于 {BRIDGE_HOST}:{BRIDGE_PORT}")
-    print(f"[*] 将转发到内部 SOCKS5 代理 {SOCKS5_HOST}:{SOCKS5_PORT}")
+    # print("HTTP-to-SOCKS5 bridge listening on 0.0.0.0:5000")
 
     while True:
         client_socket, addr = server_socket.accept()
-        print(f"[*] 收到来自 {addr[0]}:{addr[1]} 的新连接")
-        # 为每个客户端连接创建一个新线程
+        # print(f"Accepted connection from {addr}")
         thread = threading.Thread(target=handle_client, args=(client_socket,))
-        thread.daemon = True
         thread.start()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
