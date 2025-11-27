@@ -93,7 +93,7 @@ class ThreadedServer(object):
             return None
 
     def _handle_socks5(self, client_socket):
-#"'''处理SOCKS5协议连接，保持与原有返回格式一致'''
+        """处理SOCKS5协议连接，保持与原有返回格式一致"""
         try:
             # 认证协商阶段
             client_socket.recv(2)  # 已经通过peek确认版本
@@ -145,11 +145,11 @@ class ThreadedServer(object):
             return None
 
     def _handle_http_protocol(self, client_socket):
-        "'''增强后的 HTTP 处理：
+        """增强后的 HTTP 处理：
            - 支持 CONNECT（原有）
            - 支持 proxy-forward（返回 (remote_obj, initial_request_bytes)）
            - 支持 PAC / 原有重定向 / 错误处理
-        '''
+        """
         data = client_socket.recv(16384)
         if not data:
             client_socket.close()
