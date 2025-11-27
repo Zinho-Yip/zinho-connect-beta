@@ -35,12 +35,16 @@ COPY --from=builder /app/.venv ./.venv
 # Set the PATH to include the venv binaries
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Copy the application source code
-# We only copy the necessary parts to run the application
+# Copy the application source code and scripts
 COPY src/ ./src
 COPY run.py .
+COPY http_to_socks_bridge.py .  # <-- 新增：复制桥接脚本
+COPY start.sh .                # <-- 新增：复制启动脚本
 COPY config.json .
 COPY config_pac.json .
+
+# 使启动脚本可执行
+RUN chmod +x start.sh
 
 # Change ownership of the app directory to the non-root user
 RUN chown -R appuser:appuser /app
@@ -48,11 +52,9 @@ RUN chown -R appuser:appuser /app
 # Switch to the non-root user
 USER appuser
 
-# Expose the default port for the proxy
+# Expose ports for both services
 EXPOSE 2500/tcp
+EXPOSE 5000/tcp                 # <-- 新增：暴露桥接服务的端口
 
-# Set the command to run the application
-# IMPORTANT: The application must listen on 0.0.0.0 to be accessible from outside the container.
-# You may need to modify your config.json or application logic to ensure this.
-# For example, set "local_address": "0.0.0.0" in your config.json.
-CMD ["python", "run.py"]
+# Set the command to run the start script
+CMD ["./start.sh"]              # <-- 修改：使用启动脚本
