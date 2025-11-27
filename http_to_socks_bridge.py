@@ -207,4 +207,17 @@ def main():
     server_socket.close()
 
 if __name__ == "__main__":
-    main()
+
+    try:
+
+        main()
+
+    except Exception as e:
+
+        log(f"FATAL: Bridge service failed to start: {e}")
+
+        # Exit with a non-zero code to make sure the container stops
+
+        import sys
+
+        sys.exit(1)
