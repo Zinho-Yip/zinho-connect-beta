@@ -26,6 +26,13 @@ def handle_client(client_socket):
 
         first_line = request_data.split(b'\r\n')[0]
         log(f"Request: {first_line.decode(errors='ignore')}")
+
+        # --- 健康检查 ---
+        if first_line.startswith(b'GET /healthz'):
+            log("Health check request received.")
+            client_socket.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHello from bridge!')
+            return
+        # --- 健康检查结束 ---
         
         method, url, version = first_line.split(b' ', 2)
 
